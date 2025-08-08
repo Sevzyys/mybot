@@ -17,11 +17,16 @@ CATEGORY_ID = 1333688858638024736  # Replace with your ticket category ID
 class TicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-    
+
     @discord.ui.button(label="💰 Purchase", style=discord.ButtonStyle.primary, custom_id="purchase_button", emoji="🛒")
     async def purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
-        guild = interaction.guild
-        category = discord.utils.get(guild.categories, id=CATEGORY_ID)
+        # (your original ticket creation code here)
+        ...
+
+    @discord.ui.button(label="🌐 Purchase from Website", style=discord.ButtonStyle.link, url="https://sevservices.mysellauth.com/", emoji="🔗")
+    async def purchase_website(self, button: discord.ui.Button, interaction: discord.Interaction):
+        pass  # Link buttons don’t need logic, they just redirect
+
         
         # Check if user already has a ticket
         existing_channel = discord.utils.get(guild.text_channels, name=f"ticket-{interaction.user.name}".replace(" ", "-").lower())
