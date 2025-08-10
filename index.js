@@ -1146,9 +1146,7 @@ client.on("interactionCreate", async (interaction) => {
 
 client.login(process.env.token);
 
-
-
-// bot.js
+{ // bot.js
 require('dotenv').config();
 const {
   Client,
@@ -1336,3 +1334,8 @@ client.on('messageCreate', async (message) => {
 
 // ---------- START ----------
 client.login(process.env.token);
+
+  
+}
+
+
