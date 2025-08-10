@@ -2,24 +2,35 @@ const express = require("express");
 const app = express();
 
 app.listen(3000, () => {
-  console.log("project is running!");
+  console.log("Project is running!");
 });
 
 app.get("/", (req, res) => {
-  res.send("hello world!");
+  res.send("Hello world!");
 });
 
 const Discord = require("discord.js");
+const fs = require("fs");
+const path = require("path");
 
-// Security: Rate limiting maps
+// ====== SECURITY STORAGE ======
 const userCooldowns = new Map();
 const channelCooldowns = new Map();
 const processedInteractions = new Map();
 
-// Security: Input validation functions
+const warningsFile = path.join(__dirname, "warnings.json");
+let warnings = fs.existsSync(warningsFile)
+  ? JSON.parse(fs.readFileSync(warningsFile, "utf8"))
+  : {};
+
+function saveWarnings() {
+  fs.writeFileSync(warningsFile, JSON.stringify(warnings, null, 2));
+}
+
+// ====== SECURITY FILTERS ======
 function sanitizeInput(input) {
-  if (typeof input !== 'string') return '';
-  return input.replace(/[<>@&"']/g, '').trim();
+  if (typeof input !== "string") return "";
+  return input.replace(/[<>@&"']/g, "").trim();
 }
 
 function isValidUserId(userId) {
@@ -30,16 +41,15 @@ function isValidChannelId(channelId) {
   return /^\d{17,19}$/.test(channelId);
 }
 
-// Security: Anti-promotion and scam detection
 const PROMOTION_KEYWORDS = [
-  'discord.gg/', 'discord.com/invite/', 'dsc.gg/', 'invite.gg/',
-  'free nitro', 'free discord', 'steam gift', 'free robux',
-  'click here', 'limited time', 'hurry up', 'act fast',
-  'dm me', 'private message', 'contact me for',
-  'selling', 'buy from me', 'cheap prices', 'best deals',
-  'telegram', 'whatsapp', 'instagram follow', 'youtube subscribe',
-  'check my profile', 'visit my', 'my server', 'join my',
-  'crypto', 'bitcoin', 'nft', 'investment', 'trading'
+  "discord.gg/", "discord.com/invite/", "dsc.gg/", "invite.gg/",
+  "free nitro", "free discord", "steam gift", "free robux",
+  "click here", "limited time", "hurry up", "act fast",
+  "dm me", "private message", "contact me for",
+  "selling", "buy from me", "cheap prices", "best deals",
+  "telegram", "whatsapp", "instagram follow", "youtube subscribe",
+  "check my profile", "visit my", "my server", "join my",
+  "crypto", "bitcoin", "nft", "investment", "trading"
 ];
 
 const SCAM_PATTERNS = [
@@ -57,38 +67,32 @@ const SCAM_PATTERNS = [
 
 function detectPromotion(content) {
   const lowerContent = content.toLowerCase();
-  
-  // Check for promotion keywords
+
   for (const keyword of PROMOTION_KEYWORDS) {
     if (lowerContent.includes(keyword.toLowerCase())) {
       return { detected: true, reason: `Promotion keyword: ${keyword}` };
     }
   }
-  
-  // Check for scam patterns
+
   for (const pattern of SCAM_PATTERNS) {
     if (pattern.test(content)) {
-      return { detected: true, reason: `Scam pattern detected: ${pattern}` };
+      return { detected: true, reason: `Scam pattern: ${pattern}` };
     }
   }
-  
-  // Check for Discord invite links
+
   const invitePattern = /(discord\.gg\/|discord\.com\/invite\/|discordapp\.com\/invite\/)/i;
   if (invitePattern.test(content)) {
-    return { detected: true, reason: 'Discord invite link detected' };
+    return { detected: true, reason: "Discord invite link detected" };
   }
-  
-  // Check for suspicious URLs
+
   const urlPattern = /(https?:\/\/[^\s]+)/gi;
   const urls = content.match(urlPattern);
   if (urls) {
+    const suspiciousDomains = [
+      "discord-nitro", "steam-gift", "free-nitro", "discord-free",
+      "discrod", "steamcomunity", "steamcommuntiy"
+    ];
     for (const url of urls) {
-      // Check for suspicious domains
-      const suspiciousDomains = [
-        'discord-nitro', 'steam-gift', 'free-nitro', 'discord-free',
-        'discrod', 'discordapp', 'steamcomunity', 'steamcommuntiy'
-      ];
-      
       for (const domain of suspiciousDomains) {
         if (url.toLowerCase().includes(domain)) {
           return { detected: true, reason: `Suspicious domain: ${domain}` };
@@ -96,35 +100,34 @@ function detectPromotion(content) {
       }
     }
   }
-  
+
   return { detected: false };
 }
 
 function isWhitelistedUser(userId) {
-  // Whitelist bot owners and admins
   const whitelistedUsers = [
-    '1325295557782278208' // Owner role members will be checked separately
+    "1325295557782278208" // Owner
   ];
   return whitelistedUsers.includes(userId);
 }
 
-// Security: Rate limiting function
+// ====== RATE LIMITING ======
 function checkRateLimit(userId, command, limitMs = 5000) {
   const key = `${userId}-${command}`;
   const now = Date.now();
   const lastUsed = userCooldowns.get(key);
 
-  if (lastUsed && (now - lastUsed) < limitMs) {
-    return false; // Rate limited
+  if (lastUsed && now - lastUsed < limitMs) {
+    return false;
   }
-
   userCooldowns.set(key, now);
-  return true; // Not rate limited
+  return true;
 }
 
+// ====== DISCORD BOT ======
 const client = new Discord.Client({
   intents: [
-    Discord.GatewayIntentBits.Guilds, 
+    Discord.GatewayIntentBits.Guilds,
     Discord.GatewayIntentBits.GuildMessages,
     Discord.GatewayIntentBits.MessageContent,
     Discord.GatewayIntentBits.GuildMembers
@@ -132,35 +135,70 @@ const client = new Discord.Client({
 });
 
 client.on("ready", () => {
-  console.log("The Bot Is Ready!");
-  securityLog('BOT_STARTED', client.user.id, `- Bot: ${client.user.tag}`);
+  console.log(`Bot ready as ${client.user.tag}`);
 
-  // Security: Clean up old cooldowns every 10 minutes
   setInterval(() => {
     const now = Date.now();
-    const tenMinutesAgo = now - (10 * 60 * 1000);
+    const tenMinutesAgo = now - 10 * 60 * 1000;
 
     for (const [key, timestamp] of userCooldowns.entries()) {
-      if (timestamp < tenMinutesAgo) {
-        userCooldowns.delete(key);
-      }
+      if (timestamp < tenMinutesAgo) userCooldowns.delete(key);
     }
-
     for (const [key, timestamp] of channelCooldowns.entries()) {
-      if (timestamp < tenMinutesAgo) {
-        channelCooldowns.delete(key);
-      }
+      if (timestamp < tenMinutesAgo) channelCooldowns.delete(key);
     }
 
-    // Clean up processed interactions older than 5 minutes
-    const fiveMinutesAgo = now - (5 * 60 * 1000);
+    const fiveMinutesAgo = now - 5 * 60 * 1000;
     for (const [key, timestamp] of processedInteractions.entries()) {
-      if (timestamp < fiveMinutesAgo) {
-        processedInteractions.delete(key);
-      }
+      if (timestamp < fiveMinutesAgo) processedInteractions.delete(key);
     }
   }, 10 * 60 * 1000);
 });
+
+// ====== MESSAGE MONITOR & WARN SYSTEM ======
+client.on("messageCreate", async (message) => {
+  if (message.author.bot || isWhitelistedUser(message.author.id)) return;
+
+  const check = detectPromotion(message.content);
+  if (check.detected) {
+    await message.delete().catch(() => {});
+    handleWarning(message, check.reason);
+  }
+});
+
+async function handleWarning(message, reason) {
+  const guildId = message.guild.id;
+  const userId = message.author.id;
+
+  if (!warnings[guildId]) warnings[guildId] = {};
+  if (!warnings[guildId][userId]) warnings[guildId][userId] = 0;
+
+  warnings[guildId][userId]++;
+  saveWarnings();
+
+  const count = warnings[guildId][userId];
+
+  try {
+    await message.author.send(`⚠️ Warning ${count}/3: ${reason}`);
+  } catch {
+    console.log(`Could not DM ${message.author.tag}`);
+  }
+
+  const muteRole = message.guild.roles.cache.find(r => r.name.toLowerCase() === "muted");
+
+  if (count === 1 && muteRole) {
+    await message.member.roles.add(muteRole, "First warning");
+    setTimeout(() => message.member.roles.remove(muteRole), 3 * 60 * 60 * 1000);
+  } else if (count === 2 && muteRole) {
+    await message.member.roles.add(muteRole, "Second warning");
+    setTimeout(() => message.member.roles.remove(muteRole), 12 * 60 * 60 * 1000);
+  } else if (count >= 3) {
+    await message.guild.members.ban(userId, { reason: "3rd warning reached" });
+  }
+}
+
+client.login(process.env.token);
+
 
 // Welcome message when someone joins the server
 client.on("guildMemberAdd", async (member) => {
